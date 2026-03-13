@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1a1a2e"/>
+      <stop offset="100%" stop-color="#16213e"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Rounded square background -->
+  <rect x="0" y="0" width="1024" height="1024" rx="228" ry="228" fill="url(#bg)"/>
+
+  <!-- Equalizer bars -->
+  <rect x="260" y="480" width="72" height="240" rx="36" fill="#e0e0e0"/>
+  <rect x="392" y="360" width="72" height="360" rx="36" fill="#e0e0e0"/>
+  <rect x="524" y="280" width="72" height="440" rx="36" fill="#ffffff"/>
+  <rect x="656" y="380" width="72" height="340" rx="36" fill="#e0e0e0"/>
+
+  <!-- Music note -->
+  <circle cx="692" cy="420" r="48" fill="none" stroke="#e0e0e0" stroke-width="0"/>
+  <rect x="728" y="200" width="12" height="220" rx="6" fill="#e0e0e0"/>
+  <circle cx="728" cy="420" r="40" fill="#e0e0e0"/>
+  <path d="M740 200 Q740 170 770 160 L810 148 Q830 142 830 162 L830 220 Q830 240 810 234 L770 222 Q740 214 740 200Z" fill="#e0e0e0"/>
+</svg>
