@@ -27,10 +27,11 @@ debug:
 # Install to /Applications
 install: build
     -pkill -x {{product}}
-    rm -rf /Applications/{{product}}.app
-    cp -r build/{{product}}.app /Applications/
-    open /Applications/{{product}}.app
-    @echo "Installed to /Applications/{{product}}.app"
+    rm -rf ~/Applications/{{product}}.app
+    mkdir -p ~/Applications
+    cp -r build/{{product}}.app ~/Applications/
+    open ~/Applications/{{product}}.app
+    @echo "Installed to ~/Applications/{{product}}.app"
 
 # Clean build artifacts
 clean:

@@ -83,6 +83,11 @@ struct PlayerView: View {
                 .padding(.horizontal, 16)
                 .padding(.top, 14)
                 .padding(.bottom, 10)
+                .contentShape(Rectangle())
+                .onTapGesture { nowPlaying.revealInMusic() }
+                .onHover { inside in
+                    if inside { NSCursor.pointingHand.push() } else { NSCursor.pop() }
+                }
 
                 // Seekable progress bar
                 if nowPlaying.duration > 0 {

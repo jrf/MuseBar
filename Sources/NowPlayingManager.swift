@@ -191,6 +191,20 @@ class NowPlayingManager: ObservableObject {
         runMusicCommand("previous track")
     }
 
+    func revealInMusic() {
+        DispatchQueue.global(qos: .userInitiated).async {
+            let script = """
+            tell application "Music"
+                reveal current track
+                activate
+            end tell
+            """
+            let appleScript = NSAppleScript(source: script)
+            var error: NSDictionary?
+            appleScript?.executeAndReturnError(&error)
+        }
+    }
+
     func seek(to position: Double) {
         elapsed = position
         lastFetchedPosition = position
