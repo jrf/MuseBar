@@ -192,16 +192,37 @@ class NowPlayingManager: ObservableObject {
     }
 
     func revealInMusic() {
-        DispatchQueue.global(qos: .userInitiated).async {
-            let script = """
-            tell application "Music"
-                reveal current track
-                activate
-            end tell
-            """
-            let appleScript = NSAppleScript(source: script)
-            var error: NSDictionary?
-            appleScript?.executeAndReturnError(&error)
+        guard let track = track else { return }
+        let album = track.album ?? track.title
+        let artist = track.artist
+        let searchTerm = "\(album) \(artist)"
+
+        Task.detached {
+            var opened = false
+            if let encoded = searchTerm.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+               let searchURL = URL(string: "https://itunes.apple.com/search?term=\(encoded)&entity=album&limit=1"),
+               let (data, _) = try? await URLSession.shared.data(from: searchURL),
+               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let results = json["results"] as? [[String: Any]],
+               let first = results.first,
+               let urlString = first["collectionViewUrl"] as? String,
+               let albumURL = URL(string: urlString) {
+                await MainActor.run {
+                    NSWorkspace.shared.open(albumURL)
+                }
+                opened = true
+            }
+            if !opened {
+                let script = """
+                tell application "Music"
+                    reveal current track
+                    activate
+                end tell
+                """
+                let appleScript = NSAppleScript(source: script)
+                var error: NSDictionary?
+                appleScript?.executeAndReturnError(&error)
+            }
         }
     }
 
