@@ -245,6 +245,7 @@ class NowPlayingManager: ObservableObject {
     }
 
     private func handleMusicNotification(_ notification: Notification) {
+        guard controlBackend != .spotify else { return }
         guard let info = notification.userInfo else { return }
 
         let name = info["Name"] as? String
@@ -372,6 +373,12 @@ class NowPlayingManager: ObservableObject {
 
     func revealInMusic() {
         guard let track = track else { return }
+
+        if controlBackend == .spotify {
+            revealInSpotify()
+            return
+        }
+
         let album = track.album ?? track.title
         let artist = track.artist
         let searchTerm = "\(album) \(artist)"
@@ -402,6 +409,22 @@ class NowPlayingManager: ObservableObject {
                 var error: NSDictionary?
                 appleScript?.executeAndReturnError(&error)
             }
+        }
+    }
+
+    private func revealInSpotify() {
+        DispatchQueue.global(qos: .userInitiated).async {
+            let script = """
+            tell application "Spotify"
+                set trackID to id of current track
+                set trackURI to spotify url of current track
+            end tell
+            tell application "Spotify" to activate
+            do shell script "open " & quoted form of trackURI
+            """
+            let appleScript = NSAppleScript(source: script)
+            var error: NSDictionary?
+            appleScript?.executeAndReturnError(&error)
         }
     }
 
