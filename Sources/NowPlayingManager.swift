@@ -35,7 +35,7 @@ class NowPlayingManager: ObservableObject {
             controlBackend = .appleScript
         }
         setupNotifications()
-        fetchViaAppleScript()
+        fetchNowPlaying()
         startProgressTimer()
     }
 
@@ -47,6 +47,13 @@ class NowPlayingManager: ObservableObject {
         ) { [weak self] notification in
             Task { @MainActor in self?.handleMusicNotification(notification) }
         }
+        DistributedNotificationCenter.default().addObserver(
+            forName: NSNotification.Name("com.spotify.client.PlaybackStateChanged"),
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            Task { @MainActor in self?.handleSpotifyNotification(notification) }
+        }
     }
 
     private func startProgressTimer() {
@@ -56,6 +63,15 @@ class NowPlayingManager: ObservableObject {
                 let delta = Date.now.timeIntervalSince(self.lastFetchTime)
                 self.elapsed = min(self.lastFetchedPosition + delta, self.duration)
             }
+        }
+    }
+
+    // MARK: - Fetch Routing
+
+    func fetchNowPlaying() {
+        switch controlBackend {
+        case .appleScript, .muse: fetchViaAppleScript()
+        case .spotify: fetchViaSpotify()
         }
     }
 
@@ -137,7 +153,96 @@ class NowPlayingManager: ObservableObject {
         }
     }
 
+    // MARK: - Spotify AppleScript
+
+    func fetchViaSpotify() {
+        fetchGeneration += 1
+        let generation = fetchGeneration
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let script = """
+            tell application "System Events"
+                if not (exists process "Spotify") then return "NOT_RUNNING"
+            end tell
+            tell application "Spotify"
+                if player state is stopped then return "STOPPED"
+                set pState to "Playing"
+                if player state is paused then set pState to "Paused"
+                set t to current track
+                set info to name of t & "||" & artist of t & "||" & album of t & "||" & ((duration of t) / 1000 as string) & "||" & (player position as string) & "||" & pState & "||" & artwork url of t
+                return info
+            end tell
+            """
+
+            let appleScript = NSAppleScript(source: script)
+            var error: NSDictionary?
+            let result = appleScript?.executeAndReturnError(&error)
+
+            // Parse result and fetch artwork from URL
+            guard let output = result?.stringValue else {
+                Task { @MainActor in
+                    guard let self, generation == self.fetchGeneration else { return }
+                    self.clearTrack()
+                }
+                return
+            }
+
+            if output == "NOT_RUNNING" || output == "STOPPED" {
+                Task { @MainActor in
+                    guard let self, generation == self.fetchGeneration else { return }
+                    self.clearTrack()
+                }
+                return
+            }
+
+            let parts = output.components(separatedBy: "||")
+            guard parts.count >= 6 else {
+                Task { @MainActor in
+                    guard let self, generation == self.fetchGeneration else { return }
+                    self.clearTrack()
+                }
+                return
+            }
+
+            let title = parts[0]
+            let artist = parts[1]
+            let album = parts[2].isEmpty ? nil : parts[2]
+            let dur = Double(parts[3]) ?? 0
+            let pos = Double(parts[4]) ?? 0
+            let state = parts[5]
+            let artworkURLString = parts.count >= 7 ? parts[6] : nil
+
+            var artworkImage: NSImage?
+            if let urlStr = artworkURLString, let url = URL(string: urlStr),
+               let data = try? Data(contentsOf: url) {
+                artworkImage = NSImage(data: data)
+            }
+
+            Task { @MainActor in
+                guard let self, generation == self.fetchGeneration else { return }
+                self.track = Track(title: title, artist: artist, album: album, artwork: artworkImage, duration: dur)
+                self.isPlaying = state == "Playing"
+                self.duration = dur
+                self.lastFetchedPosition = pos
+                self.lastFetchTime = .now
+                self.elapsed = pos
+            }
+        }
+    }
+
     // MARK: - Distributed Notification
+
+    private func handleSpotifyNotification(_ notification: Notification) {
+        guard controlBackend == .spotify else { return }
+        guard let info = notification.userInfo else { return }
+
+        let state = info["Player State"] as? String
+
+        if state == "Playing" || state == "Paused" {
+            fetchViaSpotify()
+        } else if state == "Stopped" {
+            clearTrack()
+        }
+    }
 
     private func handleMusicNotification(_ notification: Notification) {
         guard let info = notification.userInfo else { return }
@@ -232,7 +337,7 @@ class NowPlayingManager: ObservableObject {
             var error: NSDictionary?
             appleScript?.executeAndReturnError(&error)
             Task { @MainActor in
-                self?.fetchViaAppleScript()
+                self?.fetchViaSpotify()
             }
         }
     }
