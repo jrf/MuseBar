@@ -26,6 +26,12 @@ class NowPlayingManager: ObservableObject {
     private var lastFetchTime: Date = .now
 
     init() {
+        if let saved = UserDefaults.standard.string(forKey: "controlBackend"),
+           let backend = ControlBackend(rawValue: saved) {
+            controlBackend = backend
+        } else {
+            controlBackend = .appleScript
+        }
         setupNotifications()
         fetchViaAppleScript()
         startProgressTimer()
@@ -167,6 +173,16 @@ class NowPlayingManager: ObservableObject {
 
     // MARK: - Playback Controls
 
+    enum ControlBackend: String, CaseIterable {
+        case appleScript = "AppleScript"
+        case muse = "Muse CLI"
+        case spotify = "Spotify"
+    }
+
+    @Published var controlBackend: ControlBackend {
+        didSet { UserDefaults.standard.set(controlBackend.rawValue, forKey: "controlBackend") }
+    }
+
     private func runMusicCommand(_ command: String) {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let script = "tell application \"Music\" to \(command)"
@@ -179,16 +195,56 @@ class NowPlayingManager: ObservableObject {
         }
     }
 
+    private nonisolated static let musePath = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent(".local/bin/muse").path
+
+    private func runMuseCommand(_ command: String) {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: Self.musePath)
+            process.arguments = [command]
+            try? process.run()
+            process.waitUntilExit()
+            Task { @MainActor in
+                self?.fetchViaAppleScript()
+            }
+        }
+    }
+
+    private func runSpotifyCommand(_ command: String) {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let script = "tell application \"Spotify\" to \(command)"
+            let appleScript = NSAppleScript(source: script)
+            var error: NSDictionary?
+            appleScript?.executeAndReturnError(&error)
+            Task { @MainActor in
+                self?.fetchViaAppleScript()
+            }
+        }
+    }
+
     func togglePlayPause() {
-        runMusicCommand("playpause")
+        switch controlBackend {
+        case .appleScript: runMusicCommand("playpause")
+        case .muse: runMuseCommand("play")
+        case .spotify: runSpotifyCommand("playpause")
+        }
     }
 
     func nextTrack() {
-        runMusicCommand("next track")
+        switch controlBackend {
+        case .appleScript: runMusicCommand("next track")
+        case .muse: runMuseCommand("next")
+        case .spotify: runSpotifyCommand("next track")
+        }
     }
 
     func previousTrack() {
-        runMusicCommand("previous track")
+        switch controlBackend {
+        case .appleScript: runMusicCommand("previous track")
+        case .muse: runMuseCommand("prev")
+        case .spotify: runSpotifyCommand("previous track")
+        }
     }
 
     func revealInMusic() {
@@ -208,7 +264,7 @@ class NowPlayingManager: ObservableObject {
                let urlString = first["collectionViewUrl"] as? String,
                let albumURL = URL(string: urlString) {
                 await MainActor.run {
-                    NSWorkspace.shared.open(albumURL)
+                    _ = NSWorkspace.shared.open(albumURL)
                 }
                 opened = true
             }
