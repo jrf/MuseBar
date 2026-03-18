@@ -409,6 +409,11 @@ class NowPlayingManager: ObservableObject {
         elapsed = position
         lastFetchedPosition = position
         lastFetchTime = .now
-        runMusicCommand("set player position to \(position)")
+        switch controlBackend {
+        case .appleScript, .muse:
+            runMusicCommand("set player position to \(position)")
+        case .spotify:
+            runSpotifyCommand("set player position to \(position)")
+        }
     }
 }
