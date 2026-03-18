@@ -24,6 +24,8 @@ class NowPlayingManager: ObservableObject {
     private var progressTimer: Timer?
     private var lastFetchedPosition: Double = 0
     private var lastFetchTime: Date = .now
+    private var suppressStoppedUntil: Date = .distantPast
+    private var fetchGeneration: Int = 0
 
     init() {
         if let saved = UserDefaults.standard.string(forKey: "controlBackend"),
@@ -60,6 +62,8 @@ class NowPlayingManager: ObservableObject {
     // MARK: - AppleScript
 
     func fetchViaAppleScript() {
+        fetchGeneration += 1
+        let generation = fetchGeneration
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let script = """
             tell application "System Events"
@@ -99,7 +103,7 @@ class NowPlayingManager: ObservableObject {
             }
 
             Task { @MainActor in
-                guard let self else { return }
+                guard let self, generation == self.fetchGeneration else { return }
                 guard let output = result?.stringValue else {
                     self.clearTrack()
                     return
@@ -153,13 +157,18 @@ class NowPlayingManager: ObservableObject {
             lastFetchTime = .now
             elapsed = 0
 
+            // Always update track immediately with available info (preserving artwork if same track)
+            track = Track(title: name, artist: artist, album: album, artwork: trackChanged ? nil : track?.artwork, duration: duration)
+
             if trackChanged {
                 // Fetch full info including artwork for new tracks
                 fetchViaAppleScript()
-            } else {
-                track = Track(title: name, artist: artist, album: album, artwork: track?.artwork, duration: duration)
             }
         } else if state == "Stopped" {
+            // Muse CLI triggers a brief "Stopped" state during track transitions — ignore it
+            if controlBackend == .muse, Date.now < suppressStoppedUntil {
+                return
+            }
             clearTrack()
         }
     }
@@ -205,8 +214,13 @@ class NowPlayingManager: ObservableObject {
             process.arguments = [command]
             try? process.run()
             process.waitUntilExit()
-            Task { @MainActor in
-                self?.fetchViaAppleScript()
+            // Music may briefly report "Stopped" during track transitions triggered
+            // by the Muse CLI. Delay the fetch so Music has time to start the new track.
+            let weakSelf = self
+            DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 0.5) {
+                Task { @MainActor in
+                    weakSelf?.fetchViaAppleScript()
+                }
             }
         }
     }
@@ -234,7 +248,9 @@ class NowPlayingManager: ObservableObject {
     func nextTrack() {
         switch controlBackend {
         case .appleScript: runMusicCommand("next track")
-        case .muse: runMuseCommand("next")
+        case .muse:
+            suppressStoppedUntil = Date.now.addingTimeInterval(2)
+            runMuseCommand("next")
         case .spotify: runSpotifyCommand("next track")
         }
     }
@@ -242,7 +258,9 @@ class NowPlayingManager: ObservableObject {
     func previousTrack() {
         switch controlBackend {
         case .appleScript: runMusicCommand("previous track")
-        case .muse: runMuseCommand("prev")
+        case .muse:
+            suppressStoppedUntil = Date.now.addingTimeInterval(2)
+            runMuseCommand("prev")
         case .spotify: runSpotifyCommand("previous track")
         }
     }
