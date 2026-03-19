@@ -4,6 +4,17 @@ import SwiftUI
 struct MuseBarApp: App {
     @StateObject private var nowPlaying = NowPlayingManager()
 
+    init() {
+        let dominated = NSRunningApplication.runningApplications(withBundleIdentifier: Bundle.main.bundleIdentifier ?? "")
+        if dominated.count > 1 {
+            // Another instance is already running — activate it and exit
+            if let existing = dominated.first(where: { $0 != NSRunningApplication.current }) {
+                existing.activate()
+            }
+            NSApp.terminate(nil)
+        }
+    }
+
     var body: some Scene {
         MenuBarExtra {
             PlayerView(nowPlaying: nowPlaying)
